@@ -1,7 +1,7 @@
 # Rukko
 
-A rust library for communicating with Apache Pekko JVM actors. Allows rust applications to send messages to and receive
-replies from Pekko actors.
+A rust library for communicating with [Apache Pekko](https://pekko.apache.org) JVM actors. Allows rust applications to
+send messages to and receive replies from Pekko actors.
 
 ## Quick Start
 
@@ -66,7 +66,7 @@ let response = actor
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the [MIT License](LICENSE).
 
 ## Contributing
 
