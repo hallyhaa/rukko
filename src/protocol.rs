@@ -295,11 +295,11 @@ impl ActorPath {
             return Err(RukkoError::InvalidActorPath(format!("Invalid protocol, expected pekko:// : {}", s)));
         };
         let parts: Vec<&str> = without_protocol.splitn(2, '/').collect();
-        
+
         if parts.len() != 2 {
             return Err(RukkoError::InvalidActorPath(format!("Missing path component: {}", s)));
         }
-        
+
         let path = parts[1].to_string();
         if path.is_empty() {
             return Err(RukkoError::InvalidActorPath(format!("Empty path component: {}", s)));
@@ -310,30 +310,30 @@ impl ActorPath {
         if address_parts.len() != 2 {
             return Err(RukkoError::InvalidActorPath(format!("Missing address component: {}", s)));
         }
-        
+
         let system = address_parts[0].to_string();
         if system.is_empty() {
             return Err(RukkoError::InvalidActorPath(format!("Empty system name: {}", s)));
         }
-        
+
         let host_and_port = address_parts[1];
         if host_and_port.is_empty() {
             return Err(RukkoError::InvalidActorPath(format!("Host and port must be specified: {}", s)));
         }
-        
+
         let host_port_parts: Vec<&str> = host_and_port.splitn(2, ':').collect();
         if host_port_parts.len() != 2 {
             return Err(RukkoError::InvalidActorPath(format!("Port number not specified: {}", s)));
         }
-        
+
         let host = host_port_parts[0].to_string();
         if host.is_empty() {
             return Err(RukkoError::InvalidActorPath(format!("Empty host name: {}", s)));
         }
-        
+
         let port = host_port_parts[1].parse::<u16>()
             .map_err(|_| RukkoError::InvalidActorPath(format!("Invalid port: {}", host_port_parts[1])))?;
-        
+
         Ok(ActorPath {
             system,
             host,
@@ -342,9 +342,11 @@ impl ActorPath {
             protocol,
         })
     }
-    
-    pub fn to_string(&self) -> String {
-        format!("{}://{}@{}:{}/{}", self.protocol, self.system, self.host, self.port, self.path)
+}
+
+impl std::fmt::Display for ActorPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}://{}@{}:{}/{}", self.protocol, self.system, self.host, self.port, self.path)
     }
 }
 
