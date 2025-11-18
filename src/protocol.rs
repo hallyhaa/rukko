@@ -404,6 +404,12 @@ impl Message {
     }
 }
 
+impl std::fmt::Display for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.content)
+    }
+}
+
 impl InternalMessage {
     /// Create an internal message from user content
     pub(crate) fn from_user_message(message: &Message) -> Self {
