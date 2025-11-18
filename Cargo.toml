@@ -1,6 +1,6 @@
 [package]
 name = "rukko"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Hallvard Ystad"]
 description = "A Rust library for communicating with JVM-based Pekko actors"
