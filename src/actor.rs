@@ -181,7 +181,7 @@ impl ActorSelection {
     
     /// Send a message and wait for a response
     pub async fn ask_with_timeout(&self, message: Message, timeout: Duration) -> Result<Message> {
-        debug!("Asking actor selection {} with timeout {:?}", self.path.to_string(), timeout);
+        debug!("Asking actor selection {} with timeout {:?}", self.path, timeout);
         
         // Generate a unique temporary actor path
         let temp_path = self.system.transport.temp_path_for_selection(&self.path.to_string());
@@ -208,7 +208,7 @@ impl ActorSelection {
     
     /// Send a message without waiting for a response giving `sender` as sender.
     pub fn tell_with_explicit_sender(&self, message: Message, sender: ActorPath) {
-        debug!("Telling actor selection {} from {}", self.path.to_string(), sender.to_string());
+        debug!("Telling actor selection {} from {}", self.path, sender);
         
         let transport = self.system.transport.clone();
         let target_path = self.path.clone();
@@ -221,7 +221,7 @@ impl ActorSelection {
                 target_path,
                 message,
             ).await {
-                warn!("Tell operation {} --> {} failed: {}", sender_for_log.to_string(), target_path_for_log.to_string(), e);
+                warn!("Tell operation {} --> {} failed: {}", sender_for_log, target_path_for_log, e);
             }
         });
     }

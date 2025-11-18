@@ -434,8 +434,8 @@ impl ArteryTransport {
         let mut data_buf = data.clone();
         match MessageEnvelope::decode(&mut data_buf) {
             Ok(envelope) => {
-                trace!("Decoded incoming message from {} with serializer_id={} manifest={}", 
-                       envelope.sender.to_string(), envelope.serializer_id, envelope.class_manifest);
+                trace!("Decoded incoming message from {} with serializer_id={} manifest={}",
+                       envelope.sender, envelope.serializer_id, envelope.class_manifest);
                 
                 // Route this to the ask pattern handler for regular messages
                 Self::handle_incoming_message(envelope, self.pending_responses.clone(), Some(self)).await;
@@ -575,10 +575,10 @@ impl ArteryTransport {
                                     if let Err(e) = connection.send_message(ack_envelope).await {
                                         error!("Failed to send ActorSystemTerminatingAck: {}", e);
                                     } else {
-                                        debug!("Successfully sent ActorSystemTerminatingAck to {}", envelope.sender.to_string());
+                                        debug!("Successfully sent ActorSystemTerminatingAck to {}", envelope.sender);
                                     }
                                 } else {
-                                    warn!("No active connection found to send ACK to {}", envelope.sender.to_string());
+                                    warn!("No active connection found to send ACK to {}", envelope.sender);
                                 }
                             }
                             return;
@@ -757,8 +757,8 @@ impl ArteryTransport {
                     let connections = self.connections.lock().await;
                     if let Some(connection) = connections.get(server_address) {
                         for envelope in queued_messages {
-                            trace!("Sending queued message from {} to {}", 
-                                   envelope.sender.to_string(), envelope.recipient.to_string());
+                            trace!("Sending queued message from {} to {}",
+                                   envelope.sender, envelope.recipient);
                             if let Err(e) = connection.send_message(envelope).await {
                                 error!("Failed to send queued message: {}", e);
                             }
@@ -1405,8 +1405,8 @@ impl Connection {
         let mut data_buf = data.clone();
         match MessageEnvelope::decode(&mut data_buf) {
             Ok(envelope) => {
-                trace!("Decoded outbound message from {} with serializer_id={} manifest={}", 
-                       envelope.sender.to_string(), envelope.serializer_id, envelope.class_manifest);
+                trace!("Decoded outbound message from {} with serializer_id={} manifest={}",
+                       envelope.sender, envelope.serializer_id, envelope.class_manifest);
                 
                 // Check if this is a HandshakeRsp in binary envelope format (fallback)
                 if envelope.serializer_id == 17 && envelope.class_manifest == "e" {
