@@ -1,7 +1,12 @@
-# Rukko
+Rukko
+=============
+[![crates.io](https://img.shields.io/crates/v/rukko)](https://crates.io/crates/rukko)
+[![docs](https://img.shields.io/docsrs/rukko)](https://docs.rs/rukko)
 
 A rust library for communicating with [Apache Pekko](https://pekko.apache.org) JVM actors. Allows rust applications to
 send messages to and receive replies from Pekko actors.
+
+https://docs.rs/rukko/latest/rukko/
 
 ## Quick Start
 
