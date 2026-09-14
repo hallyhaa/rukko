@@ -1,6 +1,6 @@
 # JVM test node
 
-A minimal Apache Pekko 1.1.x actor system used to verify that Rukko speaks the
+A minimal Apache Pekko 1.7.x actor system used to verify that Rukko speaks the
 Artery TCP protocol correctly. Nothing in the Rust crate depends on it at build time.
 
 Requirements: Java 21 and Maven.
