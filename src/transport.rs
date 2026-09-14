@@ -621,7 +621,7 @@ impl ArteryTransport {
             
             if let Some(response_tx) = response_tx {
                 trace!("Found pending ask request for path: {}", recipient_path);
-                if let Err(_) = response_tx.send(message) {
+                if response_tx.send(message).is_err() {
                     warn!("Failed to send response - receiver dropped");
                 }
             } else {
@@ -826,7 +826,7 @@ impl ArteryTransport {
         
         // Step 3: Wait for pending responses with timeout (graceful flush like FlushOnShutdown)
         debug!("Phase 3: Waiting for pending responses to complete");
-        if let Err(_) = timeout(self.shutdown_timeouts.flush_timeout, self.wait_for_pending_responses()).await {
+        if timeout(self.shutdown_timeouts.flush_timeout, self.wait_for_pending_responses()).await.is_err() {
             warn!("Graceful flush timeout reached after {:?}, proceeding with shutdown", self.shutdown_timeouts.flush_timeout);
         } else {
             debug!("All pending responses completed gracefully");
@@ -1478,7 +1478,7 @@ impl Connection {
         debug!("First 32 bytes of envelope: {}", debug_bytes);
         
         // Specifically log the version byte (offset 0) to debug the protocol version issue
-        if envelope_data.len() > 0 {
+        if !envelope_data.is_empty() {
             debug!("Version byte at offset 0: {}", envelope_data[0]);
         }
         if envelope_data.len() > 12 {
@@ -1704,6 +1704,193 @@ mod tests {
         assert!(!ack_encoded.unwrap().is_empty());
     }
     
+    // ---- Ported from Pekko's TcpFramingSpec ------------------------------------------------
+
+    /// Builds `n` frames of the 5-byte payload [1,2,3,4,5], each with its 4-byte LE length prefix
+    /// (TcpFraming.encodeFrameHeader), exactly like `frameBytes` in TcpFramingSpec.
+    fn frame_bytes(n: usize) -> Vec<u8> {
+        let payload = [1u8, 2, 3, 4, 5];
+        let mut out = Vec::new();
+        for _ in 0..n {
+            out.extend_from_slice(&FrameHeader::new(payload.len() as u32).encode());
+            out.extend_from_slice(&payload);
+        }
+        out
+    }
+
+    /// TcpFramingSpec "parse frames from random chunks": the frame parser must produce identical
+    /// frames regardless of how the TCP stream is chunked.
+    #[test]
+    fn test_try_parse_frame_from_random_chunks() {
+        use rand::{Rng, SeedableRng};
+        let seed: u64 = rand::random();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+
+        let number_of_frames = 100;
+        let bytes = frame_bytes(number_of_frames);
+
+        let mut buffer = BytesMut::new();
+        let mut frames = Vec::new();
+        let mut remaining = &bytes[..];
+        while !remaining.is_empty() {
+            let chunk_size = rng.random_range(1..=remaining.len()); // no 0 length chunks
+            buffer.extend_from_slice(&remaining[..chunk_size]);
+            remaining = &remaining[chunk_size..];
+            while let Some(result) = Connection::try_parse_frame(&mut buffer) {
+                frames.push(result.expect("frame"));
+            }
+        }
+
+        assert_eq!(frames.len(), number_of_frames, "random chunks seed: {seed}");
+        for (header, data) in &frames {
+            assert_eq!(header.size, 5, "random chunks seed: {seed}");
+            assert_eq!(data.as_ref(), &[1u8, 2, 3, 4, 5], "random chunks seed: {seed}");
+        }
+        assert!(buffer.is_empty(), "no bytes left over, seed: {seed}");
+    }
+
+    /// TcpFramingSpec "report truncated frames": a final partial frame must not be emitted.
+    #[test]
+    fn test_try_parse_frame_holds_back_truncated_frame() {
+        let mut bytes = frame_bytes(3);
+        bytes.pop(); // truncate the last frame by one byte
+        let mut buffer = BytesMut::from(&bytes[..]);
+
+        let mut parsed = 0;
+        while let Some(result) = Connection::try_parse_frame(&mut buffer) {
+            result.unwrap();
+            parsed += 1;
+        }
+        assert_eq!(parsed, 2);
+        assert_eq!(buffer.len(), 4 + 5 - 1, "the truncated frame stays in the buffer");
+    }
+
+    /// TcpFramingSpec "work with empty stream"
+    #[test]
+    fn test_try_parse_frame_empty_buffer() {
+        let mut buffer = BytesMut::new();
+        assert!(Connection::try_parse_frame(&mut buffer).is_none());
+        let mut three = BytesMut::from(&[5u8, 0, 0][..]);
+        assert!(Connection::try_parse_frame(&mut three).is_none(), "fewer than 4 header bytes");
+    }
+
+    async fn connected_pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (client, server) = tokio::join!(TcpStream::connect(addr), listener.accept());
+        (client.unwrap(), server.unwrap().0)
+    }
+
+    /// TcpFramingSpec "grab streamId from connection header" / "in single chunk"
+    #[tokio::test]
+    async fn test_read_connection_header_accepts_magic_in_one_or_two_chunks() {
+        for split_header in [false, true] {
+            let (mut client, server) = connected_pair().await;
+            let (mut reader, _writer) = tokio::io::split(server);
+            let mut header = b"AKKA".to_vec();
+            header.push(StreamId::Ordinary as u8);
+            header.extend_from_slice(&frame_bytes(1));
+
+            if split_header {
+                client.write_all(&header[..4]).await.unwrap();
+                client.flush().await.unwrap();
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                client.write_all(&header[4..]).await.unwrap();
+            } else {
+                client.write_all(&header).await.unwrap();
+            }
+            client.flush().await.unwrap();
+
+            let mut buffer = BytesMut::with_capacity(64);
+            ArteryTransport::read_connection_header(&mut reader, &mut buffer).await
+                .expect("valid connection header");
+            // The header (magic + stream id) is consumed; whatever followed it is left for framing
+            while buffer.len() < 9 {
+                reader.read_buf(&mut buffer).await.unwrap();
+            }
+            let (h, data) = Connection::try_parse_frame(&mut buffer).unwrap().unwrap();
+            assert_eq!(h.size, 5);
+            assert_eq!(data.as_ref(), &[1u8, 2, 3, 4, 5]);
+        }
+    }
+
+    /// TcpFramingSpec "reject invalid magic"
+    #[tokio::test]
+    async fn test_read_connection_header_rejects_invalid_magic() {
+        let (mut client, server) = connected_pair().await;
+        let (mut reader, _writer) = tokio::io::split(server);
+        client.write_all(&frame_bytes(2)).await.unwrap(); // no "AKKA" prefix
+        client.flush().await.unwrap();
+
+        let mut buffer = BytesMut::with_capacity(64);
+        let err = ArteryTransport::read_connection_header(&mut reader, &mut buffer).await
+            .expect_err("missing magic must be rejected");
+        assert!(matches!(err, RukkoError::HandshakeFailed(_)), "got {err:?}");
+    }
+
+    /// Connection closed before the 5 header bytes arrived
+    #[tokio::test]
+    async fn test_read_connection_header_rejects_truncated_header() {
+        let (mut client, server) = connected_pair().await;
+        let (mut reader, _writer) = tokio::io::split(server);
+        client.write_all(b"AKK").await.unwrap();
+        client.flush().await.unwrap();
+        drop(client);
+
+        let mut buffer = BytesMut::with_capacity(64);
+        let err = ArteryTransport::read_connection_header(&mut reader, &mut buffer).await
+            .expect_err("truncated header must be rejected");
+        assert!(matches!(err, RukkoError::HandshakeFailed(_)), "got {err:?}");
+    }
+
+    /// Known bug, reproduced against a real Pekko 1.1.3 node (see the review report): when the
+    /// peer's first frames arrive in the same TCP read as the "AKKA" + stream-id connection header,
+    /// `incoming_reader_loop` leaves them unprocessed in the buffer and only parses them after the
+    /// NEXT read returns. If the peer then goes quiet (as Pekko does after replying to an ask), the
+    /// reply sits in the buffer and the ask times out.
+    #[tokio::test]
+    #[ignore = "known bug: frames received together with the connection header are not processed until more bytes arrive"]
+    async fn test_frames_arriving_with_connection_header_are_processed_immediately() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let transport = Arc::new(ArteryTransport::new(99, port, "127.0.0.1".to_string(), "Local".to_string()));
+        tokio::spawn(ArteryTransport::run_server(listener, transport.clone()));
+
+        // A pending ask, waiting for a reply addressed to our temp path
+        let temp = ActorPath::new("Local".to_string(), "127.0.0.1".to_string(), port, "temp/_user_echo$a".to_string());
+        let (tx, rx) = oneshot::channel();
+        transport.pending_responses.lock().await.insert(temp.to_string(), tx);
+
+        // Fake Pekko peer: connection header + HandshakeReq frame + reply frame in ONE write, then silence
+        let peer_system = ActorPath::new("PekkoNode".to_string(), "127.0.0.1".to_string(), 25552, "system".to_string());
+        let local_system = transport.get_local_actor_path();
+        let peer_echo = ActorPath::new("PekkoNode".to_string(), "127.0.0.1".to_string(), 25552, "user/echo".to_string());
+
+        let handshake = InternalMessage::handshake_req(UniqueAddress { address: peer_system.clone(), uid: 7 }, local_system.clone());
+        let mut handshake_env = MessageEnvelope::new(peer_system.clone(), local_system, handshake).unwrap();
+        handshake_env.uid = 7;
+        let reply = InternalMessage::from_user_message(&ProtocolMessage::text("pong"));
+        let mut reply_env = MessageEnvelope::new(peer_echo, temp, reply).unwrap();
+        reply_env.uid = 7;
+
+        let mut bytes = b"AKKA".to_vec();
+        bytes.push(StreamId::Ordinary as u8);
+        for env in [handshake_env, reply_env] {
+            let data = env.encode().unwrap();
+            bytes.extend_from_slice(&FrameHeader::new(data.len() as u32).encode());
+            bytes.extend_from_slice(&data);
+        }
+        let mut peer = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        peer.write_all(&bytes).await.unwrap();
+        peer.flush().await.unwrap();
+
+        let reply = timeout(Duration::from_secs(1), rx).await
+            .expect("the reply must be dispatched without waiting for more bytes from the peer")
+            .unwrap();
+        assert_eq!(reply.content(), "pong");
+        drop(peer);
+    }
+
     #[tokio::test]
     async fn test_termination_hints_no_connections() {
         let transport = ArteryTransport::new(777777, 0, "127.0.0.1".to_string(), "TerminationTest".to_string());
@@ -1711,7 +1898,6 @@ mod tests {
         // Test that sending termination hints with no connections doesn't error
         transport.send_termination_hints().await;
         
-        // Should complete without errors even with no connections
-        assert!(true);
+        // Reaching this point without a panic or a hang is the assertion
     }
 }

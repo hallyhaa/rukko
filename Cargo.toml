@@ -9,6 +9,7 @@ repository = "https://github.com/hallyhaa/rukko"
 readme = "README.md"
 keywords = ["pekko", "actor", "distributed", "messaging"]
 categories = ["network-programming", "concurrency"]
+exclude = ["jvm-test-node/"]
 
 [dependencies]
 tokio = { version = "1.48.0", features = ["net", "io-util", "time", "sync", "rt-multi-thread", "macros"] }
