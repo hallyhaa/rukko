@@ -60,6 +60,9 @@ mod tests;
 #[cfg(test)]
 mod pekko_compatibility_tests;
 
+#[cfg(test)]
+mod golden_tests;
+
 pub use actor::{ActorSystem, ActorSelection};
 pub use protocol::Message;
 pub use error::{RukkoError, Result};
