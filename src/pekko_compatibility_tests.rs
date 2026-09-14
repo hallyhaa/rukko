@@ -356,7 +356,7 @@ mod connection_compatibility {
             let system_clone = system.clone();
             let handle = tokio::spawn(async move {
                 let address = format!("pekko://Test{}@127.0.0.1:6552{}/user/test", i, i % 10);
-                let message = Message::text(&format!("Concurrent message {}", i));
+                let message = Message::text(format!("Concurrent message {}", i));
                 
                 // Should handle failures gracefully
                 if let Ok(selection) = system_clone.actor_selection(&address).await {
@@ -416,7 +416,7 @@ mod delivery_compatibility {
             let system_clone = system.clone();
             let target_clone = target.to_string();
             let handle = tokio::spawn(async move {
-                let message = Message::text(&format!("Message {}", i));
+                let message = Message::text(format!("Message {}", i));
                 if let Ok(selection) = system_clone.actor_selection(&target_clone).await {
                     let _result = timeout(Duration::from_millis(10), async { selection.tell(message); Ok::<(), Box<dyn std::error::Error>>(()) }).await;
                 }

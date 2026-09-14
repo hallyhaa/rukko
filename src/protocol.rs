@@ -5,8 +5,10 @@ use crate::error::{RukkoError, Result};
 /// Pekko protocol constant
 pub const PEKKO: &str = "pekko";
 
-/// Stream IDs for different message types in Artery protocol
+/// Stream IDs for different message types in Artery protocol.
+/// Only `Control` is sent today; the others document the protocol and are exercised by the golden tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum StreamId {
     Control = 0x01,
     Ordinary = 0x02,
@@ -14,6 +16,7 @@ pub(crate) enum StreamId {
 }
 
 impl StreamId {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn from_u8(value: u8) -> Result<Self> {
         match value {
             0x01 => Ok(StreamId::Control),
@@ -41,6 +44,7 @@ impl FrameHeader {
         buf.freeze()
     }
     
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn decode(buf: &mut Bytes) -> Result<Self> {
         if buf.len() < 4 {
             return Err(RukkoError::Protocol("Insufficient data for frame header".to_string()));
@@ -289,11 +293,10 @@ impl ActorPath {
     
     pub fn from_string(s: String) -> Result<Self> {
         // Parse pekko://system@host:port/path only
-        let (protocol, without_protocol) = if s.starts_with("pekko://") {
-            (PEKKO, &s[8..]) // Remove "pekko://"
-        } else {
+        let Some(without_protocol) = s.strip_prefix("pekko://") else {
             return Err(RukkoError::InvalidActorPath(format!("Invalid protocol, expected pekko:// : {}", s)));
         };
+        let protocol = PEKKO;
         let parts: Vec<&str> = without_protocol.splitn(2, '/').collect();
 
         if parts.len() != 2 {
@@ -351,7 +354,10 @@ impl std::fmt::Display for ActorPath {
 }
 
 /// Control messages for protocol-level communication (handshakes, termination, etc.)
+/// `HandshakeRsp` is never sent by Rukko (it only initiates handshakes) but is kept for
+/// protocol completeness and verified against Pekko's encoding in the golden tests.
 #[derive(Debug, Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum ControlMessage {
     HandshakeReq(crate::pekko_protobuf::HandshakeReq),
     HandshakeRsp(crate::pekko_protobuf::MessageWithAddress),
@@ -439,6 +445,7 @@ impl InternalMessage {
         }
     }
     
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn handshake_rsp(from: UniqueAddress) -> Self {
         let protobuf_rsp = crate::pekko_protobuf::MessageWithAddress {
             address: crate::pekko_protobuf::UniqueAddress::from(from),

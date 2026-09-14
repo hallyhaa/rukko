@@ -450,7 +450,7 @@ mod integration_tests {
             let system_clone = system.clone();
             let handle = tokio::spawn(async move {
                 let address = format!("pekko://Test{}@127.0.0.1:6553{}/user/test", i, i);
-                let message = Message::text(&format!("Message {}", i));
+                let message = Message::text(format!("Message {}", i));
                 
                 // This will fail but should handle multiple concurrent attempts gracefully
                 if let Ok(selection) = system_clone.actor_selection(&address).await {
